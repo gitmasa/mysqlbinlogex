@@ -1,0 +1,19 @@
+pre:::
+autoscan
+mv configure.scan configure.in
+vi configure.in
+>>PACKAGE-NAME:
+>>VERSION:major,minor:set
+>>BUG-REPORT: bug通知先アドレス
+>AM_INIT_AUTOMAKE
+>AC_CONFIG_FILES([])>>AC_CONFIG_FILES([Makefile src/Makefile])とか。全て羅列
+
+touch NEWS README AUTHORS ChangeLog
+
+post:::
+aclocal
+autoheader
+automake -ac
+autoconf
+
+make dist

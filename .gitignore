@@ -1,0 +1,11 @@
+*.orig
+*.o
+*.a
+Makefile
+Makefile.am
+config.log
+config.status
+*~
+*.swp
+
+

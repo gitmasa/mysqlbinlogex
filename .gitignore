@@ -2,10 +2,13 @@
 *.o
 *.a
 Makefile
-Makefile.am
 config.log
 config.status
 *~
 *.swp
-
+autom4te.cache
+autoscan.log
+mysqlbinlogex_config.h
+stamp-h1
+.deps
 

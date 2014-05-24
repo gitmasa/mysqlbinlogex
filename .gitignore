@@ -11,4 +11,6 @@ autoscan.log
 mysqlbinlogex_config.h
 stamp-h1
 .deps
-
+src/mysqlbinlogex
+src/mysqltxtlog
+*.tar.gz

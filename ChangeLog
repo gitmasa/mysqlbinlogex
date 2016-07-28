@@ -1,2 +1,5 @@
+2016-07-28 Masaki Hayashi <support@tapweb.co.jp>
+	* mysqlbinlogex-0.2.1 released.
+	* parse dbname in query.
 2014-05-24 Masatoshi Eizono <support@tapweb.co.jp>
 	* mysqlbinlogex-0.1.1 released.

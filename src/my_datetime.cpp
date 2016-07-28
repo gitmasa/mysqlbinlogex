@@ -80,6 +80,12 @@ bool my_datetime::str_to_time(string dt_str)
 		i=6;
 		_tm.tm_sec = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
 	}
+
+	regfree(&pat1);
+	regfree(&pat2);
+	regfree(&pat3);
+	regfree(&pat4);
+
 	time_t timer = mktime(&_tm);
 	if (timer == -1) {
 		return false;

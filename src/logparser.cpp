@@ -152,6 +152,15 @@ string* logparser::parse()
 	while (1) {
 		if (!_getHeader(&header))
 			break; // 完了。
+
+//		if ((header.type == 0x17 || header.type == 0x18 || header.type == 0x19)) {
+//			data_len = header.size - 19;
+//			if (!_skipByte(data_len))
+//				return new string("460:binlog file Header invalid data size(no Data).\nparser abort.\n");
+//			fprintf(stdout,"=========\nDEBUG:type[%d]\n=========\n", header.type);
+//			continue;
+//		}
+
 		if (header.type != 2 || header.flags != 0) {
 			data_len = header.size - 19;
 			if (!_skipByte(data_len))

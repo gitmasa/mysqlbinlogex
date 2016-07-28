@@ -9,6 +9,7 @@
 #include "unistd.h"
 #include "stdlib.h"
 #include "stdio.h"
+#include "string.h"
 #include "regex.h"
 #include "dirent.h"
 #include "time.h"

@@ -109,6 +109,7 @@ string* logparser::parse()
 		_fm = new filemanage(_dstdir, cpy);
 	}
 	unsigned char buff[19];
+	char dbname[255];
 	int enable_crc32=0;
 	Mysql_Logheader header;
 	int data_len=0, status_len=0, sql_pos=0;
@@ -206,7 +207,10 @@ string* logparser::parse()
 			_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
 			logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
 		}
-		if (_database.length() > 0 && strcmp((char*)_query_buff, _database.c_str()) != 0) {
+
+		strncpy(dbname, _database.c_str(), 254);
+		dbname[254] = 0;
+		if (_database.length() > 0 && strcmp((char*)_query_buff, dbname) != 0) {
 			free(_query_buff);
 			_query_buff = NULL;
 			continue;
@@ -215,10 +219,10 @@ string* logparser::parse()
 		res= localtime(&ts_tmp);
 		if (_fm != NULL) {
 			FILE *tmpfp = _fm->getFile((char*)_query_buff);
-			fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _query_buff);
+			fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname);
 			fprintf(tmpfp,"%s\n", &_query_buff[sql_pos]);
 		} else {
-			fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _query_buff);
+			fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname);
 			fprintf(stdout,"%s\n", &_query_buff[sql_pos]);
 		}
 		free(_query_buff);

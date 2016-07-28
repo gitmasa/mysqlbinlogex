@@ -109,6 +109,7 @@ string* logparser::parse()
 		_fm = new filemanage(_dstdir, cpy);
 	}
 	unsigned char buff[19];
+	char dbname[255];
 	int enable_crc32=0;
 	Mysql_Logheader header;
 	int data_len=0, status_len=0, sql_pos=0;
@@ -146,6 +147,21 @@ string* logparser::parse()
 	if (!_skipByte(data_len))
 		return new string("454:binlog file Header invalid data size(no Data).\nparser abort.\n");
 	// はじめのクエリ走査は終了。
+
+	regex_t pat1,pat2,pat3;
+	size_t nmatch = 2;
+	regmatch_t pmatch[nmatch];
+	int i = 0;
+
+	if (regcomp(&pat1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
+		return false;
+	}
+	if (regcomp(&pat2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
+		return false;
+	}
+	if (regcomp(&pat3, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
+		return false;
+	}
 
 	// メインループ。
 	// 2回目以降のクエリは、「type=02 && Flags=00 00」のレコードのみを表示させます。
@@ -206,25 +222,50 @@ string* logparser::parse()
 			_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
 			logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
 		}
-		if (_database.length() > 0 && strcmp((char*)_query_buff, _database.c_str()) != 0) {
+
+		dbname[0] = 0; // init
+		// dbname detect
+		char *sql_start;
+		sql_start = (char*)&_query_buff[sql_pos];
+
+		if (regexec(&pat1, sql_start, nmatch, pmatch, 0) == 0) {
+			strncpy(dbname, string(sql_start, pmatch[1].rm_so, (pmatch[1].rm_eo - pmatch[1].rm_so)).c_str(), 254);
+			dbname[254] = 0;
+		} else if (regexec(&pat2, sql_start, nmatch, pmatch, 0) == 0) {
+			strncpy(dbname, string(sql_start, pmatch[1].rm_so, (pmatch[1].rm_eo - pmatch[1].rm_so)).c_str(), 254);
+			dbname[254] = 0;
+		} else if (regexec(&pat3, sql_start, nmatch, pmatch, 0) == 0) {
+			strncpy(dbname, string(sql_start, pmatch[1].rm_so, (pmatch[1].rm_eo - pmatch[1].rm_so)).c_str(), 254);
+			dbname[254] = 0;
+		} else {
+			strncpy(dbname, (char*)_query_buff, 254);
+			dbname[254] = 0;
+		}
+
+		// dbname filter
+		if (_database.length() > 0 && strcmp((char*)dbname, _database.c_str()) != 0) {
 			free(_query_buff);
 			_query_buff = NULL;
 			continue;
 		}
+
 		ts_tmp = (time_t)header.ts;
 		res= localtime(&ts_tmp);
 		if (_fm != NULL) {
 			FILE *tmpfp = _fm->getFile((char*)_query_buff);
-			fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _query_buff);
+			fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname);
 			fprintf(tmpfp,"%s\n", &_query_buff[sql_pos]);
 		} else {
-			fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _query_buff);
+			fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname);
 			fprintf(stdout,"%s\n", &_query_buff[sql_pos]);
 		}
 		free(_query_buff);
 		_query_buff = NULL;
 	}
 
+	regfree(&pat1);
+	regfree(&pat2);
+	regfree(&pat3);
 	return new string();
 }
 

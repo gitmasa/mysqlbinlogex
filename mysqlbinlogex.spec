@@ -1,6 +1,6 @@
 Summary: mysqlbinlogex
 Name: mysqlbinlogex
-Version: 0.1.1
+Version: 0.1.2
 Release: 1
 Group: Application/Database
 Source0: mysqlbinlogex-%{version}.tar.gz

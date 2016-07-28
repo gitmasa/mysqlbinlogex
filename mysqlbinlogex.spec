@@ -1,6 +1,6 @@
 Summary: mysqlbinlogex
 Name: mysqlbinlogex
-Version: 0.1.2
+Version: 0.2.1
 Release: 1
 Group: Application/Database
 Source0: mysqlbinlogex-%{version}.tar.gz
@@ -10,7 +10,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-buildroot
 Provides: mysqlbinlogex = %{version}
 
 %description
-mysqlbinlogex for mysql5 binary log parser.
+mysqlbinlogex for mysql5-6 binary log parser.
 
 %prep
 %setup -q -n mysqlbinlogex-%{version}
@@ -40,6 +40,8 @@ rm -rf $RPM_BUILD_ROOT
 /usr/local/bin/mysqltxtlog
 
 %changelog
+* Thu Jul 28 2016 Masaki Hayashi <support@tapweb.co.jp>
+- V0.2.0
 * Sat May 24 2014 Masatoshi Eizono <support@tapweb.co.jp>
 - V0.1.1
 

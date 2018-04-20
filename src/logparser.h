@@ -30,7 +30,7 @@ private:
 	string _database;
 
 	// method
-	bool _getHeader(Mysql_Logheader* setter);
+	bool _getHeader(unsigned char* buff, Mysql_Logheader* setter);
 	bool _getByte(unsigned char* buff, int size);
 	bool _skipByte(int size);
 

@@ -1,13 +1,15 @@
 #include "src/logparser.h"
 
 // private functions
-bool logparser::_getHeader(Mysql_Logheader* setter)
+bool logparser::_getHeader(unsigned char *buff, Mysql_Logheader* setter)
 {
 	//ヘッダは、| ts(4byte) | type(1byte) | masterID(4byte) | size(4byte) | master_pos(4byte) | flags(2byte) | の19byte構成。
+/*
 	unsigned char buff[19];
 	if (!_getByte(buff, 19)) {
 		return false;
 	}
+*/
 	setter->ts = uint4korr(buff);
 	setter->type = (unsigned int)buff[4];
 	setter->masterID = uint4korr(buff+5);
@@ -122,16 +124,25 @@ string* logparser::parse()
 		return new string("450:binlog file is invalid mysql-binlog.(too small)\nparser abort.\n");
 	if (buff[0] != 0xfe || buff[1] != 0x62 || buff[2] != 0x69 || buff[3] != 0x6e)
 		return new string("451:binlog file is invalid mysql-binlog.\nparser abort.\n");
-	//1回目のクエリは、バージョン取得できる「type=0f」のレコード。バージョン取得します。
-	if (!_getHeader(&header))
+	//1回目のクエリは、バージョン取得できる「type=0f(FORMAT_DESCRIPTION_EVENT)」のレコード。バージョン取得します。
+	if (!_getByte(buff, 19)) {
+		return new string("451_a:binlog file cannnot read Header.\nparser abort.\n");
+	}
+	if (!_getHeader(buff, &header))
 		return new string("452:binlog file cannnot read Header.\nparser abort.\n");
-	// mysql5.6.1以降は後ろに4byteのチェックサムが付きます。
-	if (!_getByte(buff, 8))
-		return new string("453:binlog file not contain version info.\nparser abort.\n");
+	if (!_getByte(buff, 2))
+		return new string("453:binlog file not contain binlog-version info.\nparser abort.\n");
+	if (uint2korr(buff) != 4)
+		return new string("454:binlog file is not binlog-version4( >= MySQL5.0).\nparser abort.\n");
 
-	int ver_major = (int)buff[2] - 0x30;
-	int ver_minor = (int)buff[4] - 0x30;
-	int ver_release = ((int)buff[6] - 0x30) * 10 + ((int)buff[7] - 0x30);
+	// mysql5.6.1以降は後ろに4byteのチェックサムが付きます。
+	// チェックサム利用可能かのチェック。
+	if (!_getByte(buff, 6))
+		return new string("455:binlog file not contain version info.\nparser abort.\n");
+
+	int ver_major = (int)buff[0] - 0x30;
+	int ver_minor = (int)buff[2] - 0x30;
+	int ver_release = ((int)buff[4] - 0x30) * 10 + ((int)buff[5] - 0x30);
 	if (ver_major > 5) {
 		enable_crc32 = 1;
 	} else if (ver_major == 5) {
@@ -143,11 +154,34 @@ string* logparser::parse()
 			}
 		}
 	}
-	data_len = header.size - 19 - 8;
-	if (!_skipByte(data_len))
-		return new string("454:binlog file Header invalid data size(no Data).\nparser abort.\n");
+	// skip mysql-server version & create_ts
+	if (!_skipByte(50-6+4))
+		return new string("456:binlog file Header invalid data size(no Data).\nparser abort.\n");
+	// check event_handler_length
+	if (!_getByte(buff, 1) || buff[0] != 19)
+		return new string("457:binlog file is bad event_handler_length.\nparser abort.\n");
+	data_len = header.size - 19 - 2 - 50 - 4 - 1;
+	if (enable_crc32) {
+		if (!_skipByte(data_len - 5))
+			return new string("458:binlog file Header invalid data size(error format FORMAT_DESCRIPTION_EVENT).\nparser abort.\n");
+		// check event_handler_length
+		if (!_getByte(buff, 1))
+			return new string("459:binlog file is bad event_handler_length.\nparser abort.\n");
+		if (buff[0] != 1) { // force off CRC32 checksum
+			enable_crc32 = 0;
+		}
+		if (!_skipByte(4)) // 最後の4byteは強制crc32
+			return new string("460:binlog file Header invalid data size(error format FORMAT_DESCRIPTION_EVENT).\nparser abort.\n");
+	} else {
+		if (!_skipByte(data_len))
+			return new string("461:binlog file Header invalid data size(error format FORMAT_DESCRIPTION_EVENT).\nparser abort.\n");
+	}
 	// はじめのクエリ走査は終了。
 
+<<<<<<< HEAD
+
+	unsigned char dbname[257];
+=======
 	regex_t pat1,pat2,pat3;
 	size_t nmatch = 2;
 	regmatch_t pmatch[nmatch];
@@ -162,63 +196,157 @@ string* logparser::parse()
 	if (regcomp(&pat3, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
 		return false;
 	}
+>>>>>>> 9ac13979cf6002a0462cd942129f472f258338c3
 
 	// メインループ。
 	// 2回目以降のクエリは、「type=02 && Flags=00 00」のレコードのみを表示させます。
 	while (1) {
-		if (!_getHeader(&header))
+		if (!_getByte(buff, 19)) {
+			break; // 完了。
+		}
+
+		if (!_getHeader(buff, &header))
 			break; // 完了。
 
-//		if ((header.type == 0x17 || header.type == 0x18 || header.type == 0x19)) {
-//			data_len = header.size - 19;
-//			if (!_skipByte(data_len))
-//				return new string("460:binlog file Header invalid data size(no Data).\nparser abort.\n");
-//			fprintf(stdout,"=========\nDEBUG:type[%d]\n=========\n", header.type);
-//			continue;
-//		}
+/*
+debugging code:
+    	fprintf(stdout,"=========DEBUG:type[0x%x(%d)][0x%x(%d)][%d][0x%x]=========\n", header.type, header.type, header.flags, header.flags, header.size);
+        fprintf(stdout,"=========DEBUG:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x=========\n"
+				, buff[0], buff[1], buff[2], buff[3], buff[4], buff[5], buff[6], buff[7], buff[8], buff[9], buff[10]
+				, buff[11], buff[12], buff[13], buff[14], buff[15], buff[16], buff[17], buff[18]);
+*/
 
-		if (header.type != 2 || header.flags != 0) {
+		if (header.type == 2 && header.flags == 0) {
+			// 通常のクエリログ
+
+			// https://dev.mysql.com/doc/internals/en/query-event.html
+			if (!_skipByte(11)) // データの取得。頭の11byteは、| thread_id(4byte) | exec_time_sec(4byte) | schema length(1byte) | error_code(2byte) |なので、不要。
+				return new string("480_1:binlog file data Header invalid(post head err).\nparser abort.\n");
+			if (!_getByte(buff, 2)) // 次の2byteは、ステータスデータ長。
+				return new string("480_2:binlog file data Header invalid(post head status_length err).\nparser abort.\n");
+			status_len = uint2korr(buff);
+
+//			fprintf(stdout,"=========\nDEBUG:status_len[%d]\n=========\n", status_len);
+
+			if (!_skipByte(status_len)) // ステータスデータ長だけ、不要なので飛ばす。
+				return new string("480_3:binlog file data Header invalid(post head status_data err).\nparser abort.\n");
+
+			//データを取得。(はじめの\0までは、データベース名称。)
+			data_len = header.size - 19 - 11 - 2 - status_len;
+			if (_start_dt || _end_dt) {
+				if (_start_dt && header.ts < _start_dt) {
+					if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
+						return new string("480_4:binlog file data invalid(data_length err.1).\nparser abort.\n");
+					continue;
+				}
+				if (_end_dt && header.ts > _end_dt) {
+					if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
+						return new string("480_5:binlog file data invalid(data_length err.2).\nparser abort.\n");
+					continue;
+				}
+			}
+			if (_query_buff != NULL) {
+				free(_query_buff);
+				_query_buff = NULL;
+			}
+			_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (data_len+1));
+			if (!_getByte(_query_buff, data_len))
+				return new string("480_6:binlog file data invalid(data_length err).\nparser abort.\n");
+			// はじめの\0を探す。
+			for (sql_pos=0;sql_pos<data_len;sql_pos++) {
+				if (_query_buff[sql_pos] == 0)
+					break;
+			}
+			sql_pos++;
+			if (enable_crc32) {
+				_query_buff[data_len-4] = 0; //crc32付きである場合は、data_len-4のバイトを\0にして、終端させる。
+				logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos - 4, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+			} else {
+				_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
+				logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+			}
+			if (_database.length() > 0 && strcmp((char*)_query_buff, _database.c_str()) != 0) {
+				free(_query_buff);
+				_query_buff = NULL;
+				continue;
+			}
+			ts_tmp = (time_t)header.ts;
+			res= localtime(&ts_tmp);
+			if (_fm != NULL) {
+				FILE *tmpfp = _fm->getFile((char*)_query_buff);
+				fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _query_buff);
+				fprintf(tmpfp,"%s\n", &_query_buff[sql_pos]);
+			} else {
+				fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _query_buff);
+				fprintf(stdout,"%s\n", &_query_buff[sql_pos]);
+			}
+			free(_query_buff);
+			_query_buff = NULL;
+
+		} else if (header.type == 29 && header.flags == 128) {
+			data_len = header.size - 19;
+			if (_start_dt || _end_dt) {
+				if (_start_dt && header.ts < _start_dt) {
+					if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
+						return new string("490_1:binlog file data invalid(data_length err.1).\nparser abort.\n");
+					continue;
+				}
+				if (_end_dt && header.ts > _end_dt) {
+					if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
+						return new string("490_2:binlog file data invalid(data_length err.2).\nparser abort.\n");
+					continue;
+				}
+			}
+			// RowBaseレプリケーションのクエリログ(参照用途：コメント扱い)
+			if (!_skipByte(1)) // 最初の1Byteは不明。
+				return new string("490_3:binlog file data Header invalid(Row Query Comment post head err).\nparser abort.\n");
+			data_len = header.size - 20;
+			if (_query_buff != NULL) {
+				free(_query_buff);
+				_query_buff = NULL;
+			}
+			_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (data_len+1));
+			if (!_getByte(_query_buff, data_len))
+				return new string("490_4:binlog file data invalid(Row Query Comment Log data_length err).\nparser abort.\n");
+
+			_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
+			logparser::safeUtf8Str(_query_buff, data_len - 1, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+		} else if (header.type == 19 && header.flags == 0) { // TABLE_MAP_EVENT(https://dev.mysql.com/doc/internals/en/table-map-event.html)
+			if (!_skipByte(8)) // 最初の8Byteは[tableId(6),flags(2)]。
+				return new string("491_1:binlog file data Header invalid(Row Query TABLE_MAP_EVENT post head err).\nparser abort.\n");
+			if (!_getByte(buff, 1))
+				return new string("491_2:binlog file data Header invalid(Row Query TABLE_MAP_EVENT post head err).\nparser abort.\n");
+			if (!_getByte(dbname, buff[0])) {
+				return new string("491_3:binlog file data Header invalid(Row Query TABLE_MAP_EVENT post head err).\nparser abort.\n");
+			}
+			dbname[buff[0]] = 0; // \0にして、終端させる。
+			data_len = header.size - 19 - 8 - 1 - buff[0];
+			if (!_skipByte(data_len))
+				return new string("491_4:binlog file Header invalid data size(no Data).\nparser abort.\n");
+			if (_query_buff == NULL) {
+				continue;
+			}
+			if (_database.length() > 0 && strcmp((char*)dbname, _database.c_str()) != 0) {
+				continue;
+			}
+			ts_tmp = (time_t)header.ts;
+			res= localtime(&ts_tmp);
+			if (_fm != NULL) {
+				FILE *tmpfp = _fm->getFile((char*)_query_buff);
+				fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] %s\n", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname, _query_buff);
+			} else {
+				fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] %s\n", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname, _query_buff);
+			}
+			dbname[0] = 0; // \0にして、終端させる。
+		} else {
+<<<<<<< HEAD
+			// その他の場合は次のセットへ移動。
 			data_len = header.size - 19;
 			if (!_skipByte(data_len))
-				return new string("460:binlog file Header invalid data size(no Data).\nparser abort.\n");
+				return new string("499:binlog file Header invalid data size(no Data).\nparser abort.\n");
 			continue;
 		}
-		if (!_skipByte(11)) // データの取得。頭の11byteは、| thread_id(4byte) | exec_time_sec(4byte) | error_code(2byte) |なので、不要。
-			return new string("461:binlog file data Header invalid(post head err).\nparser abort.\n");
-		if (!_getByte(buff, 2)) // 次の2byteは、ステータスデータ長。
-			return new string("462:binlog file data Header invalid(post head status_length err).\nparser abort.\n");
-		status_len = uint2korr(buff);
-		if (!_skipByte(status_len)) // ステータスデータ長だけ、不要なので飛ばす。
-			return new string("463:binlog file data Header invalid(post head status_data err).\nparser abort.\n");
-
-		//データを取得。(はじめの\0までは、データベース名称。)
-		data_len = header.size - 19 - 11 - 2 - status_len;
-		if (_start_dt || _end_dt) {
-			if (_start_dt && header.ts < _start_dt) {
-				if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
-					return new string("464:binlog file data invalid(data_length err.1).\nparser abort.\n");
-				continue;
-			}
-			if (_end_dt && header.ts > _end_dt) {
-				if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
-					return new string("464:binlog file data invalid(data_length err.2).\nparser abort.\n");
-				continue;
-			}
-		}
-
-		_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (data_len+1));
-		if (!_getByte(_query_buff, data_len))
-			return new string("464:binlog file data invalid(data_length err).\nparser abort.\n");
-		// はじめの\0を探す。
-		for (sql_pos=0;sql_pos<data_len;sql_pos++) {
-			if (_query_buff[sql_pos] == 0)
-				break;
-		}
-		sql_pos++;
-		if (enable_crc32) {
-			_query_buff[data_len-4] = 0; //crc32付きである場合は、data_len-4のバイトを\0にして、終端させる。
-			logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos - 4, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
-		} else {
+=======
 			_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
 			logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
 		}
@@ -261,6 +389,7 @@ string* logparser::parse()
 		}
 		free(_query_buff);
 		_query_buff = NULL;
+>>>>>>> 9ac13979cf6002a0462cd942129f472f258338c3
 	}
 
 	regfree(&pat1);

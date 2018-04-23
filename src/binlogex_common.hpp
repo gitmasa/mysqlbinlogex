@@ -10,7 +10,7 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "string.h"
-#include "regex.h"
+#include <regex>
 #include "dirent.h"
 #include "time.h"
 #include "map"

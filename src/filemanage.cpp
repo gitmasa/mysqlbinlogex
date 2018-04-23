@@ -1,4 +1,4 @@
-#include "src/filemanage.h"
+#include "filemanage.hpp"
 
 filemanage::filemanage(string base_dir, string base_fname){
 	_savedir = base_dir;

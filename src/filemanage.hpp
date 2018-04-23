@@ -1,7 +1,7 @@
 #ifndef __FILEMANAGE__
 #define __FILEMANAGE__
 
-#include "src/binlogex_common.h"
+#include "binlogex_common.hpp"
 
 class filemanage
 {

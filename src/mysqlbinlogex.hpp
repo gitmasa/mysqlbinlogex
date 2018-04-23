@@ -8,8 +8,8 @@
 #ifndef __MYSQLBINLOGEX__
 #define __MYSQLBINLOGEX__
 
-#include "src/binlogex_common.h"
-#include "src/logparser.h"
+#include "binlogex_common.hpp"
+#include "logparser.hpp"
 
 static void print_usage(void);
 

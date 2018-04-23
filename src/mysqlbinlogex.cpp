@@ -6,7 +6,7 @@
  *
  */
 
-#include "src/mysqlbinlogex.h"
+#include "mysqlbinlogex.hpp"
 
 
 /************************************************************************************************************************
@@ -61,10 +61,13 @@ int main(int argc, char* argv[])
 	logparser parser(in_filepath, out_dirpath, no_crlf);
 	parser.set_filter_param(start_dt, end_dt, database);
 	string* err = parser.parse();
-	if (err->length()) {
+fprintf(stdout, "[DEBUG]END::[%d]%s\n", err->length(), err->c_str());
+
+	if (err != NULL && err->length() > 0) {
 		fprintf(stdout,"%s", err->c_str());
 		return 1;
 	}
+fprintf(stdout, "[DEBUG]END2::\n");
 	delete err;
 	return 0;
 }

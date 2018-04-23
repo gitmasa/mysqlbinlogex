@@ -8,8 +8,8 @@
 #ifndef __MYSQLTXTLOG__
 #define __MYSQLTXTLOG__
 
-#include "src/binlogex_common.h"
-#include "src/txtlogparser.h"
+#include "binlogex_common.hpp"
+#include "txtlogparser.hpp"
 
 static void print_usage(void);
 

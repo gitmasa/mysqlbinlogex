@@ -1,4 +1,4 @@
-#include "src/logparser.h"
+#include "logparser.hpp"
 
 // private functions
 bool logparser::_getHeader(unsigned char *buff, Mysql_Logheader* setter)
@@ -62,6 +62,12 @@ logparser::logparser(string srcpath, string dstdir, bool no_crlf)
 	_start_dt = 0;
 	_end_dt = 0;
 	_database = "";
+/*
+    // query-event headerにあるdbnameは、use句のものであるため、フィルタする際のdbnameとしては若干不適切。
+    regcomp(&_regDb1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
+    regcomp(&_regDb2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
+    regcomp(&_regDb1, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
+*/
 }
 
 bool logparser::set_filter_param(string start_dt, string end_dt, string database)
@@ -105,9 +111,9 @@ string* logparser::parse()
 		_fm = new filemanage(_dstdir, cpy);
 	}
 	unsigned char buff[19];
-	unsigned char dbname[255];
+	unsigned char dbname[256];
 	Mysql_Logheader header;
-	int data_len=0, status_len=0, sql_pos=0;
+	int payloadLength=0, remainLength=0, schemaLength=0, statusLength=0;
 	struct tm *res;
 	time_t ts_tmp;
 	
@@ -151,10 +157,10 @@ string* logparser::parse()
 	// check event_handler_length
 	if (!_getByte(buff, 1) || buff[0] != 19)
 		return new string("410_8:binlog file is bad event_handler_length.\nparser abort.\n");
-
-	data_len = header.size - 19 - 2 - 50 - 4 - 1;
+    payloadLength = header.size - 19;
+	remainLength = payloadLength - 2 - 50 - 4 - 1;
 	if (enable_crc32) {
-		if (!_skipByte(data_len - 5))
+		if (!_skipByte(remainLength - 5))
 			return new string("410_9:binlog file Header invalid data size(error format FORMAT_DESCRIPTION_EVENT).\nparser abort.\n");
 		// check event_handler_length
 		if (!_getByte(buff, 1))
@@ -165,24 +171,12 @@ string* logparser::parse()
 		if (!_skipByte(4)) // 最後の4byteは強制crc32
 			return new string("410_11:binlog file Header invalid data size(error format FORMAT_DESCRIPTION_EVENT).\nparser abort.\n");
 	} else {
-		if (!_skipByte(data_len))
+		if (!_skipByte(remainLength))
 			return new string("410_12:binlog file Header invalid data size(error format FORMAT_DESCRIPTION_EVENT).\nparser abort.\n");
 	}
 	// はじめのクエリ走査は終了。
-
-	// query-event headerにあるdbnameは、use句のものであるため、フィルタする際のdbnameとしては若干不適切。
-	size_t nmatch = 2;
-	regmatch_t pmatch[nmatch];
-	int i = 0;
-	if (regcomp(&_regDb1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
-        return new string("411_1:regex compile error.\nparser abort.\n");
-	}
-	if (regcomp(&_regDb2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
-        return new string("411_2:regex compile error.\nparser abort.\n");
-	}
-	if (regcomp(&_regDb1, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
-        return new string("411_3:regex compile error.\nparser abort.\n");
-	}
+    payloadLength = 0;
+    remainLength = 0;
 
 
 	// メインループ。
@@ -190,103 +184,125 @@ string* logparser::parse()
 	while (1) {
 		if (!_getByte(buff, 19) || !_getHeader(buff, &header))
 			break; // 完了。
+        payloadLength = header.size - 19;
 
-/*
-debugging code:
+
+//debugging code:
     	fprintf(stdout,"=========DEBUG:type[0x%x(%d)][0x%x(%d)][%d][0x%x]=========\n", header.type, header.type, header.flags, header.flags, header.size);
         fprintf(stdout,"=========DEBUG:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x=========\n"
 				, buff[0], buff[1], buff[2], buff[3], buff[4], buff[5], buff[6], buff[7], buff[8], buff[9], buff[10]
 				, buff[11], buff[12], buff[13], buff[14], buff[15], buff[16], buff[17], buff[18]);
-*/
-		data_len = header.size - 19;
+
 		if (!_isInDate(header.ts)) {
-			if (!_skipByte(data_len)) // ステータスデータ長だけ、不要なので飛ばす。
+			if (!_skipByte(payloadLength)) // ステータスデータ長だけ、不要なので飛ばす。
 				return new string("420_1:binlog file data invalid(data_length err.1).\nparser abort.\n");
 			continue;
 		}
 
 
 		if (header.type == 2 && header.flags == 0) {
+            fprintf(stdout, "[QUERY_EVENT]\n");
+            remainLength = payloadLength;
 			// 通常のクエリログ (https://dev.mysql.com/doc/internals/en/query-event.html)
-			if (!_skipByte(11)) // データの取得。頭の11byteは、| thread_id(4byte) | exec_time_sec(4byte) | schema length(1byte) | error_code(2byte) |なので、不要。
+			if (!_skipByte(8)) // データの取得。頭の11byteは、| thread_id(4byte) | exec_time_sec(4byte) | schema length(1byte) | error_code(2byte) |なので、不要。
 				return new string("421_1:binlog file data Header invalid(post head err).\nparser abort.\n");
+            remainLength -= 8;
+            if (!_getByte(buff, 1)) // 次の1byteはschema length。
+                return new string("421_2:binlog file data Header invalid(post head schma_length err).\nparser abort.\n");
+            remainLength -= 1;
+            schemaLength = (int)buff[0];
+            schemaLength+=1;
+            if (!_skipByte(2)) // データの取得。頭の11byteは、| thread_id(4byte) | exec_time_sec(4byte) | schema length(1byte) | error_code(2byte) |なので、不要。
+                return new string("421_3:binlog file data Header invalid(post head error_code err).\nparser abort.\n");
+            remainLength -= 2;
 			if (!_getByte(buff, 2)) // 次の2byteは、ステータスデータ長。
-				return new string("421_2:binlog file data Header invalid(post head status_length err).\nparser abort.\n");
-			status_len = uint2korr(buff);
-			if (!_skipByte(status_len)) // ステータスデータ長だけ、不要なので飛ばす。
-				return new string("421_3:binlog file data Header invalid(post head status_data err).\nparser abort.\n");
+				return new string("421_4:binlog file data Header invalid(post head status_length err).\nparser abort.\n");
+            remainLength -= 2;
+			statusLength = uint2korr(buff);
+			if (!_skipByte(statusLength)) // ステータスデータ長だけ、不要なので飛ばす。
+				return new string("421_5:binlog file data Header invalid(post head status_data err).\nparser abort.\n");
+            remainLength -= statusLength;
 
-			//データを取得。(はじめの\0までは、データベース名称。)
-			data_len = data_len - 11 - 2 - status_len;
+            if (!_getByte(dbname, schemaLength))
+                return new string("421_6:binlog file data Header invalid(schema_name err).\nparser abort.\n");
+            remainLength -= schemaLength;
+            dbname[schemaLength] = 0; // 終端
 
 			if (_query_buff != NULL) {
 				free(_query_buff);
 				_query_buff = NULL;
 			}
-			_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (data_len+1));
-			if (!_getByte(_query_buff, data_len))
-				return new string("421_6:binlog file data invalid(data_length err).\nparser abort.\n");
-			// はじめの\0を探す。
-			for (sql_pos=0;sql_pos<data_len;sql_pos++) {
-				if (_query_buff[sql_pos] == 0)
-					break;
-			}
-			sql_pos++;
+			_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (remainLength+1));
+			if (!_getByte(_query_buff, remainLength))
+				return new string("421_7:binlog file data invalid(data_length err).\nparser abort.\n");
 			if (enable_crc32) {
-				_query_buff[data_len-4] = 0; //crc32付きである場合は、data_len-4のバイトを\0にして、終端させる。
-				logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos - 4, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+				_query_buff[remainLength-4] = 0; //crc32付きである場合は、data_len-4のバイトを\0にして、終端させる。
+				logparser::safeUtf8Str(_query_buff, remainLength - 5, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
 			} else {
-				_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
-				logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+				_query_buff[remainLength] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
+				logparser::safeUtf8Str(_query_buff, remainLength, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
 			}
-			_showQuery((char*)_query_buff, (char*)_query_buff+sql_pos, header.ts);
+			_showQuery((char*)dbname, (char*)_query_buff, header.ts);
 			free(_query_buff);
 			_query_buff = NULL;
+            dbname[0] = 0;
+            continue;
+
 		} else if (header.type == 29 && header.flags == 128) {
+            fprintf(stdout, "[ROWBASE_QUERY_LOG]\n");
 			// RowBaseレプリケーションのクエリログ(参照用途：コメント扱い)
+            remainLength = payloadLength;
 			if (!_skipByte(1)) // 最初の1Byteは不明。
 				return new string("422_1:binlog file data Header invalid(Row Query Comment post head err).\nparser abort.\n");
-			data_len = data_len - 1;
-			if (_query_buff != NULL) {
+			remainLength -= 1;
+            if (_query_buff != NULL) {
 				free(_query_buff);
 				_query_buff = NULL;
 			}
-			_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (data_len+1));
-			if (!_getByte(_query_buff, data_len))
+			_query_buff = (unsigned char*)malloc(sizeof(unsigned char) * (remainLength+1));
+			if (!_getByte(_query_buff, remainLength))
 				return new string("422_2:binlog file data invalid(Row Query Comment Log data_length err).\nparser abort.\n");
 
-			_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
-			logparser::safeUtf8Str(_query_buff, data_len - 1, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+			_query_buff[remainLength] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
+			logparser::safeUtf8Str(_query_buff, remainLength - 1, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
+            continue;
 
 		} else if (header.type == 19 && header.flags == 0) {
+            fprintf(stdout, "[ROWBASE_TABLE_MAP_EVENT]\n");
+            remainLength = payloadLength;
 			// TABLE_MAP_EVENT(https://dev.mysql.com/doc/internals/en/table-map-event.html)
 			if (!_skipByte(8)) // 最初の8Byteは[tableId(6),flags(2)]。
 				return new string("491_1:binlog file data Header invalid(Row Query TABLE_MAP_EVENT post head err).\nparser abort.\n");
-			if (!_getByte(buff, 1))
+            remainLength -= 8;
+			if (!_getByte(buff, 1)) // schema_length
 				return new string("491_2:binlog file data Header invalid(Row Query TABLE_MAP_EVENT post head err).\nparser abort.\n");
-			if (!_getByte(dbname, buff[0])) {
+            schemaLength = buff[0];
+            remainLength -= 1;
+			if (!_getByte(dbname, schemaLength))
 				return new string("491_3:binlog file data Header invalid(Row Query TABLE_MAP_EVENT post head err).\nparser abort.\n");
-			}
-			dbname[buff[0]] = 0; // \0にして、終端させる。
-			data_len = data_len - 8 - 1 - buff[0];
-			if (!_skipByte(data_len))
+            remainLength -= schemaLength;
+			dbname[schemaLength] = 0; // \0にして、終端させる。
+			if (!_skipByte(remainLength))
 				return new string("491_4:binlog file Header invalid data size(no Data).\nparser abort.\n");
+
 			if (_query_buff == NULL) {
 				continue;
 			}
 			_showQuery((char*)dbname, (char*)_query_buff, header.ts);
-		} else {
-			// その他スキップする分。
-			if (!_skipByte(data_len))
-				return new string("429:binlog file Header invalid data size(no Data).\nparser abort.\n");
-			continue;
+            free(_query_buff);
+            _query_buff = NULL;
+            dbname[0] = 0;
+            continue;
 		}
+        // その他スキップする分。
+        if (!_skipByte(payloadLength))
+            return new string("429:binlog file Header invalid data size(no Data).\nparser abort.\n");
 	}
-
-	regfree(&_regDb1);
-	regfree(&_regDb2);
-	regfree(&_regDb3);
-	return new string();
+    if (_query_buff != NULL) {
+        free(_query_buff);
+        _query_buff = NULL;
+    }
+    return new string("");
 }
 
 
@@ -303,39 +319,57 @@ bool logparser::_isInDate(unsigned int headerTs){
 
 }
 
-void logparser::_showQuery(char* tmpDbName, char* tmpSql, unsigned int headerTs){
-	char dbname[255];
+void logparser::_showQuery(const char* tmpDbName,const char* tmpSql, unsigned int headerTs){
+	char _dbname[256];
 	size_t nmatch = 2;
-	regmatch_t pmatch[nmatch];
+	regmatch_t pmatch[2];
 	time_t ts_tmp;
 	struct tm *res;
+/*
+    regex_t _reg1;
+    regex_t _reg2;
+    regex_t _reg3;
 
-	if (regexec(&_regDb1, tmpSql, nmatch, pmatch, 0) == 0) {
-		strncpy(dbname, string(tmpSql, pmatch[1].rm_so, (pmatch[1].rm_eo - pmatch[1].rm_so)).c_str(), 254);
-		dbname[254] = 0;
-	} else if (regexec(&_regDb2, tmpSql, nmatch, pmatch, 0) == 0) {
-		strncpy(dbname, string(tmpSql, pmatch[1].rm_so, (pmatch[1].rm_eo - pmatch[1].rm_so)).c_str(), 254);
-		dbname[254] = 0;
-	} else if (regexec(&_regDb3, tmpSql, nmatch, pmatch, 0) == 0) {
-		strncpy(dbname, string(tmpSql, pmatch[1].rm_so, (pmatch[1].rm_eo - pmatch[1].rm_so)).c_str(), 254);
-		dbname[254] = 0;
+    regcomp(&_reg1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
+    regcomp(&_reg2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
+    regcomp(&_reg1, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
+*/
+    char *tmp = "select * from test.test where test=1";
+
+    using smatch = std::match_results<const char*>;
+    std::string s = "Shop 99";
+    std::string str = std::string(tmpSql);
+    std::smatch results;
+    std::regex _reg1 = std::regex("^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", std::regex::icase|std::regex::extended|std::regex::newline);
+    std::regex _reg2 = std::regex("^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", std::regex::icase|std::regex::extended|std::regex::newline);
+    std::regex _reg3 = std::regex("^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", std::regex::icase|std::regex::extended|std::regex::newline);
+
+fprintf(stdout, "[DBG]%s\n",tmp);
+    if (std::regex_match(tmpSql, results, _reg1)) {
+		strncpy(_dbname, results[1].str().c_str(), 255);
+	} else if (std::regex_match(tmpSql, results, _reg2)) {
+        strncpy(_dbname, results[1].str().c_str(), 255);
+	} else if (std::regex_match(tmpSql, results, _reg3)) {
+        strncpy(_dbname, results[1].str().c_str(), 255);
 	} else {
-		strncpy(dbname, tmpDbName, 254);
-		dbname[254] = 0;
+		strncpy(_dbname, tmpDbName, 255);
+		_dbname[255] = 0;
 	}
+fprintf(stdout, "[DBG]%s\n",_dbname);
+
 	// dbname filter
-	if (_database.length() > 0 && strcmp(dbname, _database.c_str()) != 0) {
+	if (_database.length() > 0 && strcmp(_dbname, _database.c_str()) != 0) {
 		return;
 	}
 
 	ts_tmp = (time_t)headerTs;
 	res= localtime(&ts_tmp);
 	if (_fm != NULL) {
-		FILE *tmpfp = _fm->getFile(dbname);
-		fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname);
+		FILE *tmpfp = _fm->getFile(_dbname);
+		fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _dbname);
 		fprintf(tmpfp,"%s\n", tmpSql);
 	} else {
-		fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, dbname);
+		fprintf(stdout,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _dbname);
 		fprintf(stdout,"%s\n", tmpSql);
 	}
 

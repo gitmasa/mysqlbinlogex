@@ -2,8 +2,8 @@
 #ifndef __TXTLOGPARSER__
 #define __TXTLOGPARSER__
 
-#include "src/binlogex_common.h"
-#include "src/my_datetime.h"
+#include "binlogex_common.hpp"
+#include "my_datetime.hpp"
 #include "fstream"
 
 class txtlogparser

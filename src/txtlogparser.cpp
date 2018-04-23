@@ -1,4 +1,4 @@
-#include "src/txtlogparser.h"
+#include "txtlogparser.hpp"
 
 // public functions
 // constructor

@@ -29,10 +29,17 @@ private:
 	unsigned int _end_dt;
 	string _database;
 
+	// dbnameRegex
+	regex_t _regDb1,_regDb2,_regDb3;
+	int enable_crc32;
+
+
 	// method
-	bool _getHeader(unsigned char* buff, Mysql_Logheader* setter);
+	bool _getHeader(unsigned char *buff, Mysql_Logheader* setter);
 	bool _getByte(unsigned char* buff, int size);
 	bool _skipByte(int size);
+	bool _isInDate(unsigned int headerTs);
+	void _showQuery(char* tmpDbName, char* tmpSql, unsigned int headerTs);
 
 public:
 	logparser(string srcpath, string dstdir, bool no_crlf);

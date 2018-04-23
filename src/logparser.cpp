@@ -105,7 +105,7 @@ string* logparser::parse()
 		_fm = new filemanage(_dstdir, cpy);
 	}
 	unsigned char buff[19];
-	char dbname[255];
+	unsigned char dbname[255];
 	Mysql_Logheader header;
 	int data_len=0, status_len=0, sql_pos=0;
 	struct tm *res;
@@ -175,13 +175,13 @@ string* logparser::parse()
 	regmatch_t pmatch[nmatch];
 	int i = 0;
 	if (regcomp(&_regDb1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
-		return false;
+        return new string("411_1:regex compile error.\nparser abort.\n");
 	}
 	if (regcomp(&_regDb2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
-		return false;
+        return new string("411_2:regex compile error.\nparser abort.\n");
 	}
 	if (regcomp(&_regDb1, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE)) {
-		return false;
+        return new string("411_3:regex compile error.\nparser abort.\n");
 	}
 
 
@@ -239,7 +239,7 @@ debugging code:
 				_query_buff[data_len] = 0; //crc32無しの場合は、data_lenバイトを\0にして、終端させる。
 				logparser::safeUtf8Str(&_query_buff[sql_pos], data_len - sql_pos, _no_crlf); // 文字列がバイナリコードを含んでいる場合はここで回して'?'に置き換える。
 			}
-			_showQuery(_query_buff, _query_buff+sql_pos, header.ts);
+			_showQuery((char*)_query_buff, (char*)_query_buff+sql_pos, header.ts);
 			free(_query_buff);
 			_query_buff = NULL;
 		} else if (header.type == 29 && header.flags == 128) {
@@ -274,7 +274,7 @@ debugging code:
 			if (_query_buff == NULL) {
 				continue;
 			}
-			_showQuery(dbname, _query_buff, header.ts);
+			_showQuery((char*)dbname, (char*)_query_buff, header.ts);
 		} else {
 			// その他スキップする分。
 			if (!_skipByte(data_len))
@@ -283,14 +283,14 @@ debugging code:
 		}
 	}
 
-	regfree(&pat1);
-	regfree(&pat2);
-	regfree(&pat3);
+	regfree(&_regDb1);
+	regfree(&_regDb2);
+	regfree(&_regDb3);
 	return new string();
 }
 
 
-bool logpaeser::_isInDate(unsigned int headerTs){
+bool logparser::_isInDate(unsigned int headerTs){
 	if (_start_dt || _end_dt) {
 		if (_start_dt && headerTs < _start_dt) {
 			return false;

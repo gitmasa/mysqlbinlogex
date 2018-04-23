@@ -40,6 +40,8 @@ rm -rf $RPM_BUILD_ROOT
 /usr/local/bin/mysqltxtlog
 
 %changelog
+* Fri Apr 20 2018 Masatoshi Eizono <support@tapweb.co.jp>
+- V0.3.1
 * Thu Jul 28 2016 Masaki Hayashi <support@tapweb.co.jp>
 - V0.2.0
 * Sat May 24 2014 Masatoshi Eizono <support@tapweb.co.jp>

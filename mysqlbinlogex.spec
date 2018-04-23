@@ -1,6 +1,6 @@
 Summary: mysqlbinlogex
 Name: mysqlbinlogex
-Version: 0.2.1
+Version: 0.3.1
 Release: 1
 Group: Application/Database
 Source0: mysqlbinlogex-%{version}.tar.gz
@@ -8,20 +8,20 @@ Vendor: Mastoshi Eizono
 License: GPLv2
 BuildRoot: %{_tmppath}/%{name}-%{version}-buildroot
 Provides: mysqlbinlogex = %{version}
+require: boost-regex
+require-dev: cmake > 2.8, boost-devel
 
 %description
 mysqlbinlogex for mysql5-6 binary log parser.
 
 %prep
 %setup -q -n mysqlbinlogex-%{version}
-#./buildconf
 
 %build
 # つくるくん。
-./configure 
+cmake .
 
 make clean
-
 make
 
 %install

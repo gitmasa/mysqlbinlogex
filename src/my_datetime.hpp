@@ -18,7 +18,7 @@ public:
 	my_datetime(string dt_str);
 	bool str_to_time(string dt_str);
 	void initDate();
-	string trim(const string& str, char* trimCharacterList=" \t\v\r\n");
+	string trim(const string& str, char* trimCharacterList=NULL);
 };
 
 

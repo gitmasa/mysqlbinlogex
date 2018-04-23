@@ -1,5 +1,7 @@
 #include "logparser.hpp"
 
+using smatch = boost::match_results<const char*>;
+
 // private functions
 bool logparser::_getHeader(unsigned char *buff, Mysql_Logheader* setter)
 {
@@ -62,12 +64,14 @@ logparser::logparser(string srcpath, string dstdir, bool no_crlf)
 	_start_dt = 0;
 	_end_dt = 0;
 	_database = "";
-/*
-    // query-event headerにあるdbnameは、use句のものであるため、フィルタする際のdbnameとしては若干不適切。
-    regcomp(&_regDb1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-    regcomp(&_regDb2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-    regcomp(&_regDb1, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-*/
+
+    try {
+        _regDb1 = boost::regex("^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", boost::regex::icase|boost::regex::extended);
+        _regDb2 = boost::regex("^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", boost::regex::icase|boost::regex::extended);
+        _regDb3 = boost::regex("^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", boost::regex::icase|boost::regex::extended);
+    } catch (boost::regex_error& e) {
+        std::cout << e.what()  << "[ERR0_3]" << std::endl;
+    }
 }
 
 bool logparser::set_filter_param(string start_dt, string end_dt, string database)
@@ -103,7 +107,7 @@ string* logparser::parse()
 		}
 		// 保存ファイル名を作成。
 		string cpy = _srcpath;
-		int loc = cpy.find_last_of('/');
+		unsigned long loc = cpy.find_last_of('/');
 		if (loc != string::npos) {
 			cpy = cpy.substr(loc+1);
 		}
@@ -114,9 +118,7 @@ string* logparser::parse()
 	unsigned char dbname[256];
 	Mysql_Logheader header;
 	int payloadLength=0, remainLength=0, schemaLength=0, statusLength=0;
-	struct tm *res;
-	time_t ts_tmp;
-	
+
 	// 走査開始 ==========================================================
 	//はじめの4byteは、必ず(fe 62 69 6e)。これでなければエラー。
 	if (!_getByte(buff, 4))
@@ -186,13 +188,13 @@ string* logparser::parse()
 			break; // 完了。
         payloadLength = header.size - 19;
 
-
+/*
 //debugging code:
-    	fprintf(stdout,"=========DEBUG:type[0x%x(%d)][0x%x(%d)][%d][0x%x]=========\n", header.type, header.type, header.flags, header.flags, header.size);
+    	fprintf(stdout,"=========DEBUG:type[0x%x(%d)][0x%x(%d)][%d]=========\n", header.type, header.type, header.flags, header.flags, header.size);
         fprintf(stdout,"=========DEBUG:%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x=========\n"
 				, buff[0], buff[1], buff[2], buff[3], buff[4], buff[5], buff[6], buff[7], buff[8], buff[9], buff[10]
 				, buff[11], buff[12], buff[13], buff[14], buff[15], buff[16], buff[17], buff[18]);
-
+*/
 		if (!_isInDate(header.ts)) {
 			if (!_skipByte(payloadLength)) // ステータスデータ長だけ、不要なので飛ばす。
 				return new string("420_1:binlog file data invalid(data_length err.1).\nparser abort.\n");
@@ -201,7 +203,6 @@ string* logparser::parse()
 
 
 		if (header.type == 2 && header.flags == 0) {
-            fprintf(stdout, "[QUERY_EVENT]\n");
             remainLength = payloadLength;
 			// 通常のクエリログ (https://dev.mysql.com/doc/internals/en/query-event.html)
 			if (!_skipByte(8)) // データの取得。頭の11byteは、| thread_id(4byte) | exec_time_sec(4byte) | schema length(1byte) | error_code(2byte) |なので、不要。
@@ -249,7 +250,6 @@ string* logparser::parse()
             continue;
 
 		} else if (header.type == 29 && header.flags == 128) {
-            fprintf(stdout, "[ROWBASE_QUERY_LOG]\n");
 			// RowBaseレプリケーションのクエリログ(参照用途：コメント扱い)
             remainLength = payloadLength;
 			if (!_skipByte(1)) // 最初の1Byteは不明。
@@ -268,7 +268,6 @@ string* logparser::parse()
             continue;
 
 		} else if (header.type == 19 && header.flags == 0) {
-            fprintf(stdout, "[ROWBASE_TABLE_MAP_EVENT]\n");
             remainLength = payloadLength;
 			// TABLE_MAP_EVENT(https://dev.mysql.com/doc/internals/en/table-map-event.html)
 			if (!_skipByte(8)) // 最初の8Byteは[tableId(6),flags(2)]。
@@ -319,43 +318,29 @@ bool logparser::_isInDate(unsigned int headerTs){
 
 }
 
+
 void logparser::_showQuery(const char* tmpDbName,const char* tmpSql, unsigned int headerTs){
 	char _dbname[256];
-	size_t nmatch = 2;
-	regmatch_t pmatch[2];
 	time_t ts_tmp;
 	struct tm *res;
-/*
-    regex_t _reg1;
-    regex_t _reg2;
-    regex_t _reg3;
 
-    regcomp(&_reg1, "^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-    regcomp(&_reg2, "^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-    regcomp(&_reg1, "^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", REG_EXTENDED|REG_ICASE|REG_NEWLINE);
-*/
-    char *tmp = "select * from test.test where test=1";
-
-    using smatch = std::match_results<const char*>;
-    std::string s = "Shop 99";
     std::string str = std::string(tmpSql);
-    std::smatch results;
-    std::regex _reg1 = std::regex("^INSERT\\s+INTO\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", std::regex::icase|std::regex::extended|std::regex::newline);
-    std::regex _reg2 = std::regex("^UPDATE\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", std::regex::icase|std::regex::extended|std::regex::newline);
-    std::regex _reg3 = std::regex("^DELETE\\s+FROM\\s+([^\\.\\s]+)\\.[^\\.\\s]+\\s+.+$", std::regex::icase|std::regex::extended|std::regex::newline);
-
-fprintf(stdout, "[DBG]%s\n",tmp);
-    if (std::regex_match(tmpSql, results, _reg1)) {
-		strncpy(_dbname, results[1].str().c_str(), 255);
-	} else if (std::regex_match(tmpSql, results, _reg2)) {
-        strncpy(_dbname, results[1].str().c_str(), 255);
-	} else if (std::regex_match(tmpSql, results, _reg3)) {
-        strncpy(_dbname, results[1].str().c_str(), 255);
-	} else {
-		strncpy(_dbname, tmpDbName, 255);
-		_dbname[255] = 0;
-	}
-fprintf(stdout, "[DBG]%s\n",_dbname);
+    boost::smatch results;
+    try {
+        if (boost::regex_match(str, results, _regDb1)) {
+            strncpy(_dbname, results[1].str().c_str(), 255);
+        } else if (boost::regex_match(str, results, _regDb2)) {
+            strncpy(_dbname, results[1].str().c_str(), 255);
+        } else if (boost::regex_match(str, results, _regDb3)) {
+            strncpy(_dbname, results[1].str().c_str(), 255);
+        } else {
+            strncpy(_dbname, tmpDbName, 255);
+            _dbname[255] = 0;
+        }
+    } catch (boost::regex_error& e) {
+        strncpy(_dbname, tmpDbName, 255);
+        _dbname[255] = 0;
+    }
 
 	// dbname filter
 	if (_database.length() > 0 && strcmp(_dbname, _database.c_str()) != 0) {
@@ -363,7 +348,7 @@ fprintf(stdout, "[DBG]%s\n",_dbname);
 	}
 
 	ts_tmp = (time_t)headerTs;
-	res= localtime(&ts_tmp);
+	res = localtime(&ts_tmp);
 	if (_fm != NULL) {
 		FILE *tmpfp = _fm->getFile(_dbname);
 		fprintf(tmpfp,"%02d/%02d/%02d %2d:%02d:%02d [%s] ", res->tm_year % 100, res->tm_mon+1, res->tm_mday, res->tm_hour, res->tm_min, res->tm_sec, _dbname);

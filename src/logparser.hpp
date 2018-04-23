@@ -30,6 +30,7 @@ private:
 	string _database;
 
 	int enable_crc32;
+	boost::regex _regDb1,_regDb2,_regDb3;
 
 	// method
 	bool _getHeader(unsigned char *buff, Mysql_Logheader* setter);

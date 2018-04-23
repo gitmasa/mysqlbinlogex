@@ -1,90 +1,58 @@
 #include "my_datetime.hpp"
 
+using smatch = boost::match_results<const char*>;
+
+
 // YY-MM-DD, YYYY-MM-DD, YY-MM-DD HH:MM:SS
-my_datetime::my_datetime(string dt_str)
-{
+my_datetime::my_datetime(string dt_str) {
 	initDate();
 	if (dt_str.length() > 0) {
 		str_to_time(dt_str);
 	}
 }
 
-bool my_datetime::str_to_time(string dt_str)
-{
+bool my_datetime::str_to_time(string dt_str) {
 	initDate();
 	if (dt_str.length() == 0) {
 		return true;
 	}
 
-	string str = trim(dt_str);
-	regex_t pat1,pat2,pat3,pat4;
-	size_t nmatch = 7;
-	regmatch_t pmatch[nmatch];
-	int i=0;
+	boost::regex _reg1, _reg2, _reg3, _reg4;
+	std::string str = trim(dt_str);
+	boost::smatch results;
+	_reg1 = boost::regex("^([0-9]{2})[-/]([0-9]{2})[-/]([0-9]{2})$", boost::regex::icase|boost::regex::extended);
+	_reg2 = boost::regex("^([0-9]{4})[-/]([0-9]{2})[-/]([0-9]{2})$", boost::regex::icase|boost::regex::extended);
+	_reg3 = boost::regex("^([0-9]{2})[-/]([0-9]{2})[-/]([0-9]{2})[ _:-]([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2})$", boost::regex::icase|boost::regex::extended);
+	_reg4 = boost::regex("^([0-9]{4})[-/]([0-9]{2})[-/]([0-9]{2})[ _:-]([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2})$", boost::regex::icase|boost::regex::extended);
 
-	if (regcomp(&pat1, "^([0-9]{2})[-/]([0-9]{2})[-/]([0-9]{2})$", REG_EXTENDED|REG_NEWLINE)) {
-		return false;
-	}
-	if (regcomp(&pat2, "^([0-9]{4})[-/]([0-9]{2})[-/]([0-9]{2})$", REG_EXTENDED|REG_NEWLINE)) {
-		return false;
-	}
-	if (regcomp(&pat3, "^([0-9]{2})[-/]([0-9]{2})[-/]([0-9]{2})[ _:-]([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2})$", REG_EXTENDED|REG_NEWLINE)) {
-		return false;
-	}
-	if (regcomp(&pat4, "^([0-9]{4})[-/]([0-9]{2})[-/]([0-9]{2})[ _:-]([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2})$", REG_EXTENDED|REG_NEWLINE)) {
-		return false;
-	}
-	string tmp="";
 	struct tm _tm;
 	struct tm* _p_tm;
 	_tm.tm_year=0;_tm.tm_mon=0;_tm.tm_mday=0;
 	_tm.tm_sec=0;_tm.tm_min=0;_tm.tm_hour=0;_tm.tm_wday=0;_tm.tm_isdst=-1;
-	if (regexec(&pat1, str.c_str(), nmatch, pmatch, 0) == 0) {
-		i=1;
-		_tm.tm_year = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) + 100;
-		i=2;
-		_tm.tm_mon = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) - 1;
-		i=3;
-		_tm.tm_mday = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-	} else if (regexec(&pat2, str.c_str(), nmatch, pmatch, 0) == 0) {
-		i=1;
-		_tm.tm_year = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) - 1900;
-		i=2;
-		_tm.tm_mon = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) - 1;
-		i=3;
-		_tm.tm_mday = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-	} else if (regexec(&pat3, str.c_str(), nmatch, pmatch, 0) == 0) {
-		i=1;
-		_tm.tm_year = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) + 100;
-		i=2;
-		_tm.tm_mon = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) - 1;
-		i=3;
-		_tm.tm_mday = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-		i=4;
-		_tm.tm_hour = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-		i=5;
-		_tm.tm_min = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-		i=6;
-		_tm.tm_sec = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-	} else if (regexec(&pat4, str.c_str(), nmatch, pmatch, 0) == 0) {
-		i=1;
-		_tm.tm_year = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) - 1900;
-		i=2;
-		_tm.tm_mon = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str()) - 1;
-		i=3;
-		_tm.tm_mday = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-		i=4;
-		_tm.tm_hour = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-		i=5;
-		_tm.tm_min = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-		i=6;
-		_tm.tm_sec = atoi(str.substr((int)pmatch[i].rm_so, ((int)pmatch[i].rm_eo - (int)pmatch[i].rm_so)).c_str());
-	}
 
-	regfree(&pat1);
-	regfree(&pat2);
-	regfree(&pat3);
-	regfree(&pat4);
+	if (boost::regex_match(str, results, _reg1)) {
+		_tm.tm_year = atoi(results[1].str().c_str()) + 100;
+		_tm.tm_mon = atoi(results[2].str().c_str()) - 1;
+		_tm.tm_mday = atoi(results[3].str().c_str());
+	} else if (boost::regex_match(str, results, _reg2)) {
+		_tm.tm_year = atoi(results[1].str().c_str()) - 1900;
+		_tm.tm_mon = atoi(results[2].str().c_str()) - 1;
+		_tm.tm_mday = atoi(results[3].str().c_str());
+	} else if (boost::regex_match(str, results, _reg3)) {
+		_tm.tm_year = atoi(results[1].str().c_str()) + 100;
+		_tm.tm_mon = atoi(results[2].str().c_str()) - 1;
+		_tm.tm_mday = atoi(results[3].str().c_str());
+		_tm.tm_hour = atoi(results[4].str().c_str());
+		_tm.tm_min = atoi(results[5].str().c_str());
+		_tm.tm_sec = atoi(results[6].str().c_str());
+	} else if (boost::regex_match(str, results, _reg4)) {
+		_tm.tm_year = atoi(results[1].str().c_str()) - 1900;
+		_tm.tm_mon = atoi(results[2].str().c_str()) - 1;
+		_tm.tm_mday = atoi(results[3].str().c_str());
+		_tm.tm_hour = atoi(results[4].str().c_str());
+		_tm.tm_min = atoi(results[5].str().c_str());
+		_tm.tm_sec = atoi(results[6].str().c_str());
+	}
 
 	time_t timer = mktime(&_tm);
 	if (timer == -1) {
@@ -101,8 +69,7 @@ bool my_datetime::str_to_time(string dt_str)
 	return true;
 }
 
-void my_datetime::initDate()
-{
+void my_datetime::initDate() {
 	this->time = 0;
 	this->month = 0;
 	this->day = 0;
@@ -112,14 +79,14 @@ void my_datetime::initDate()
 	this->sec = 0;
 }
 
-string my_datetime::trim(const string& str, char* trimCharacterList)
-{
+string my_datetime::trim(const string& str, char* trimCharacterList) {
 	string result;
+	const char* trimStrs = (trimCharacterList == NULL) ? " \t\v\r\n" : trimCharacterList;
 	// 左側からトリムする文字以外が見つかる位置を検索します。
-	string::size_type left = str.find_first_not_of(trimCharacterList);
+	string::size_type left = str.find_first_not_of(trimStrs);
 	if (left != string::npos) {
 		// 左側からトリムする文字以外が見つかった場合は、同じように右側からも検索します。
-		string::size_type right = str.find_last_not_of(trimCharacterList);
+		string::size_type right = str.find_last_not_of(trimStrs);
 		// 戻り値を決定します。ここでは右側から検索しても、トリムする文字以外が必ず存在するので判定不要です。
 		result = str.substr(left, right - left + 1);
 	}

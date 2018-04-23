@@ -1,8 +1,6 @@
 #ifndef __BINLOGEX_COMMON__
 #define __BINLOGEX_COMMON__
 
-#include "mysqlbinlogex_config.h"
-
 #include "sys/types.h"
 #include "sys/stat.h"
 #include "getopt.h"
@@ -10,12 +8,14 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "string.h"
-#include <regex>
+#include <boost/regex.hpp>
 #include "dirent.h"
 #include "time.h"
 #include "map"
 #include "string"
 #include "iostream"
+
+#include "version.hpp"
 
 using namespace std;
 

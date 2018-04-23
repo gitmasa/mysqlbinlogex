@@ -38,7 +38,7 @@ string* txtlogparser::parse()
 	time_t timer;
 	_tm.tm_year=0;_tm.tm_mon=0;_tm.tm_mday=0;
 	_tm.tm_sec=0;_tm.tm_min=0;_tm.tm_hour=0;_tm.tm_wday=0;_tm.tm_isdst=-1;
-	int st=0,fn=0;
+	unsigned long st=0,fn=0;
 	while (getline(ifs, line)) {
 		if (line.length() < 18) {
 			continue;

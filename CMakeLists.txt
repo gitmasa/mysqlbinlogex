@@ -18,11 +18,21 @@ set(SOURCE_FILES
         src/mysqlbinlogex.cpp
 )
 
+set(SOURCE_FILES2
+        src/filemanage.cpp
+        src/txtlogparser.cpp
+        src/my_datetime.cpp
+        src/mysqltxtlog.cpp
+        )
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -Wall -Wextra -Wno-long-long -pedantic")
 
 add_executable(mysqlbinlogex ${SOURCE_FILES})
+add_executable(mysqltxtlog ${SOURCE_FILES2})
 
 target_link_libraries(mysqlbinlogex boost_regex)
+target_link_libraries(mysqltxtlog boost_regex)
+
 
 set(CPACK_SOURCE_GENERATOR "TGZ")
 set(CPACK_SOURCE_PACKAGE_FILE_NAME
@@ -35,3 +45,4 @@ include(CPack)
 add_custom_target(dist COMMAND ${CMAKE_MAKE_PROGRAM} package_source)
 
 INSTALL(TARGETS mysqlbinlogex RUNTIME DESTINATION bin)
+INSTALL(TARGETS mysqltxtlog RUNTIME DESTINATION bin)

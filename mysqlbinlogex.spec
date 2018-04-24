@@ -8,8 +8,8 @@ Vendor: Mastoshi Eizono
 License: GPLv2
 BuildRoot: %{_tmppath}/%{name}-%{version}-buildroot
 Provides: mysqlbinlogex = %{version}
-require: boost-regex
-require-dev: cmake > 2.8, boost-devel
+Requires: boost-regex
+BuildRequires: cmake > 2.8, boost-devel
 
 %description
 mysqlbinlogex for mysql5-6 binary log parser.
@@ -37,6 +37,7 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root)
 /usr/local/bin/mysqlbinlogex
+/usr/local/bin/mysqltxtlog
 
 %changelog
 * Fri Apr 20 2018 Masatoshi Eizono <support@tapweb.co.jp>

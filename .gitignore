@@ -11,3 +11,6 @@ CMakeCache.txt
 Makefile
 mysqlbinlogex
 src/version.hpp
+CPackConfig.cmake
+CPackSourceConfig.cmake
+_CPack_Packages

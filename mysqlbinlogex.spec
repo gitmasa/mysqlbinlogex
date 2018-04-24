@@ -37,7 +37,6 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root)
 /usr/local/bin/mysqlbinlogex
-/usr/local/bin/mysqltxtlog
 
 %changelog
 * Fri Apr 20 2018 Masatoshi Eizono <support@tapweb.co.jp>
